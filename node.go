@@ -1,3 +1,4 @@
+// Package pqt provides helpers for testing postgres and its extensions.
 package pqt
 
 import (
@@ -39,7 +40,6 @@ type PostgresNode struct {
 	dataDirectory string
 	pgLogFile     string
 	status        int
-	logChan       chan bool
 
 	defaultConnection *sql.DB
 }
@@ -57,12 +57,8 @@ func tailLog(node *PostgresNode, filename string) {
 		log.Printf("%s: %s", node.name, line.Text)
 		log.SetFlags(flags)
 
-		select {
-		case <-node.logChan:
-			log.Println("node has stopped")
+		if node.status == STOPPED {
 			break
-		default:
-			// pass
 		}
 	}
 }
@@ -150,8 +146,6 @@ func (node *PostgresNode) Stop(params ...string) (string, error) {
 
 	res := execUtility("pg_ctl", args...)
 	node.status = STOPPED
-
-	node.logChan <- true
 
 	return res, nil
 }
@@ -262,6 +256,5 @@ func MakePostgresNode(name string) *PostgresNode {
 		status:            INITIAL,
 		user:              curUser.Username,
 		database:          "postgres",
-		logChan:           make(chan bool, 1),
 	}
 }
