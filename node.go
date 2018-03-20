@@ -3,6 +3,7 @@ package pqt
 import (
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/hpcloud/tail"
 	_ "github.com/lib/pq"
@@ -19,6 +20,11 @@ const (
 	STOPPED int = iota
 )
 
+var (
+	pqtLogSetUp bool = false
+	pqtLogFile       = flag.String("pqt-log", "", "Collect logs to one place")
+)
+
 type PostgresNode struct {
 	name     string
 	host     string
@@ -30,17 +36,30 @@ type PostgresNode struct {
 	dataDirectory string
 	pgLogFile     string
 	status        int
+	logChan       chan bool
 
 	defaultConnection *sql.DB
 }
 
-func tailLog(node_name string, filename string) {
+func tailLog(node *PostgresNode, filename string) {
 	t, err := tail.TailFile(filename, tail.Config{Follow: true})
 	if err != nil {
 		log.Print("can't tail file: ", filename)
 	}
+
 	for line := range t.Lines {
-		log.Printf("%s: %s", node_name, line.Text)
+		flags := log.Flags()
+		log.SetFlags(0)
+		log.Printf("%s: %s", node.name, line.Text)
+		log.SetFlags(flags)
+
+		select {
+		case <-node.logChan:
+			log.Println("node has stopped")
+			break
+		default:
+			// pass
+		}
 	}
 }
 
@@ -99,7 +118,7 @@ func (node *PostgresNode) start(params ...string) (string, error) {
 
 	res := execUtility("pg_ctl", args...)
 	node.status = STARTED
-	go tailLog(node.name, node.pgLogFile)
+	go tailLog(node, node.pgLogFile)
 
 	return res, nil
 }
@@ -119,6 +138,8 @@ func (node *PostgresNode) stop(params ...string) (string, error) {
 
 	res := execUtility("pg_ctl", args...)
 	node.status = STOPPED
+
+	node.logChan <- true
 
 	return res, nil
 }
@@ -172,7 +193,22 @@ port = %d
 }
 
 func makePostgresNode(name string) *PostgresNode {
-	user, err := user.Current()
+	if !pqtLogSetUp {
+		pqtLogSetUp = true
+		flag.Parse()
+
+		if *pqtLogFile != "" {
+			f, err := os.OpenFile(*pqtLogFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+				os.ModePerm)
+
+			if err != nil {
+				log.Panic("can't open file for logging")
+			}
+			log.SetOutput(f)
+		}
+	}
+
+	curUser, err := user.Current()
 	if err != nil {
 		log.Panic("can't get current user's username")
 	}
@@ -183,7 +219,8 @@ func makePostgresNode(name string) *PostgresNode {
 		port:              getAvailablePort(),
 		defaultConnection: nil,
 		status:            INITIAL,
-		user:              user.Username,
+		user:              curUser.Username,
 		database:          "postgres",
+		logChan:           make(chan bool, 1),
 	}
 }
