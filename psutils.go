@@ -1,15 +1,22 @@
 package pqt
 
+type ProcessType byte
+
+const (
+	POSTMASTER ProcessType = iota
+)
+
 type Process struct {
-	cmdline    string
-	pid        int
-	parent_pid int
+	ProcessType byte
+	CmdLine     string
+	Pid         int
+	ParentPid   int
 }
 
-func (process *Process) children() []*Process {
+func (process *Process) Children() []*Process {
 	return nil
 }
 
-func get_process_by_pid(pid int) *Process {
+func getProcessByPid(pid int) *Process {
 	return nil
 }

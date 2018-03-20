@@ -11,11 +11,11 @@ import (
 
 type ReplicaNode struct {
 	PostgresNode
-	master *PostgresNode
+	Master *PostgresNode
 }
 
-func makeReplicaNode(name string, master *PostgresNode) *ReplicaNode {
-	node := &ReplicaNode{*makePostgresNode(name), master}
+func MakeReplicaNode(name string, master *PostgresNode) *ReplicaNode {
+	node := &ReplicaNode{*MakePostgresNode(name), master}
 	return node
 }
 
@@ -34,10 +34,10 @@ standby_mode = on
 	}
 }
 
-func (node *ReplicaNode) init(params ...string) (string, error) {
+func (node *ReplicaNode) Init(params ...string) (string, error) {
 	var err error
 
-	if node.master.status != STARTED {
+	if node.Master.status != STARTED {
 		log.Panic("master node should be started")
 	}
 
@@ -49,7 +49,7 @@ func (node *ReplicaNode) init(params ...string) (string, error) {
 	os.Mkdir(node.dataDirectory, 0700)
 
 	args := []string{
-		"-p", strconv.Itoa(node.master.port),
+		"-p", strconv.Itoa(node.Master.port),
 		"-h", node.host,
 		"-U", node.user,
 		"-D", node.dataDirectory,
@@ -62,13 +62,13 @@ func (node *ReplicaNode) init(params ...string) (string, error) {
 	return res, nil
 }
 
-func (node *ReplicaNode) catchup() {
+func (node *ReplicaNode) Catchup() {
 	var lsn string
 
 	poll_lsn := "select pg_current_wal_lsn()::text"
 	wait_lsn := "select pg_last_wal_replay_lsn() >= '%s'::pg_lsn"
 
-	rows := node.master.fetch(poll_lsn)
+	rows := node.Master.Fetch(poll_lsn)
 	rows.Next()
 
 	err := rows.Scan(&lsn)
@@ -81,7 +81,7 @@ func (node *ReplicaNode) catchup() {
 	for {
 		var reached bool
 
-		rows = node.fetch(wait_query)
+		rows = node.Fetch(wait_query)
 		rows.Next()
 		err = rows.Scan(&reached)
 		rows.Close()

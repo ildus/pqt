@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 )
 
 const (
@@ -63,7 +64,7 @@ func tailLog(node *PostgresNode, filename string) {
 	}
 }
 
-func (node *PostgresNode) connect() *sql.DB {
+func (node *PostgresNode) Connect() *sql.DB {
 	conninfo := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable",
 		node.user, node.host, node.port, node.database)
 
@@ -74,11 +75,11 @@ func (node *PostgresNode) connect() *sql.DB {
 	return db
 }
 
-func (node *PostgresNode) fetch(sql string, params ...interface{}) *sql.Rows {
+func (node *PostgresNode) Fetch(sql string, params ...interface{}) *sql.Rows {
 	var err error
 
 	if node.defaultConnection == nil {
-		node.defaultConnection = node.connect()
+		node.defaultConnection = node.Connect()
 	}
 
 	rows, err := node.defaultConnection.Query(sql, params...)
@@ -89,11 +90,11 @@ func (node *PostgresNode) fetch(sql string, params ...interface{}) *sql.Rows {
 	return rows
 }
 
-func (node *PostgresNode) execute(sql string, params ...interface{}) {
-	node.fetch(sql, params...).Close()
+func (node *PostgresNode) Execute(sql string, params ...interface{}) {
+	node.Fetch(sql, params...).Close()
 }
 
-func (node *PostgresNode) start(params ...string) (string, error) {
+func (node *PostgresNode) Start(params ...string) (string, error) {
 	if node.status == STARTED {
 		return "", errors.New("node has been started already")
 	}
@@ -123,7 +124,7 @@ func (node *PostgresNode) start(params ...string) (string, error) {
 	return res, nil
 }
 
-func (node *PostgresNode) stop(params ...string) (string, error) {
+func (node *PostgresNode) Stop(params ...string) (string, error) {
 	if node.status != STARTED {
 		return "", errors.New("node has not been started")
 	}
@@ -144,7 +145,7 @@ func (node *PostgresNode) stop(params ...string) (string, error) {
 	return res, nil
 }
 
-func (node *PostgresNode) init(params ...string) (string, error) {
+func (node *PostgresNode) Init(params ...string) (string, error) {
 	if node.status != INITIAL {
 		return "", errors.New("node has been initialized already")
 	}
@@ -192,7 +193,24 @@ port = %d
 	}
 }
 
-func makePostgresNode(name string) *PostgresNode {
+func (node *PostgresNode) Pid() int {
+	if node.status != STARTED {
+		return 0
+	}
+
+	pidFile := filepath.Join(node.dataDirectory, "postmaster.pid")
+	data, err := ioutil.ReadFile(pidFile)
+	if err != nil {
+		log.Panic("can't read pid file")
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		log.Panic("can't convert to pid content of ", pidFile)
+	}
+	return pid
+}
+
+func MakePostgresNode(name string) *PostgresNode {
 	if !pqtLogSetUp {
 		pqtLogSetUp = true
 		flag.Parse()
