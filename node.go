@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -203,11 +204,15 @@ func (node *PostgresNode) Pid() int {
 	if err != nil {
 		log.Panic("can't read pid file")
 	}
-	pid, err := strconv.Atoi(string(data))
+	pid, err := strconv.Atoi(strings.Split(string(data), "\n")[0])
 	if err != nil {
 		log.Panic("can't convert to pid content of ", pidFile)
 	}
 	return pid
+}
+
+func (node *PostgresNode) GetProcess() *Process {
+	return getProcessByPid(node.Pid())
 }
 
 func MakePostgresNode(name string) *PostgresNode {
