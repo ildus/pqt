@@ -13,8 +13,17 @@ import (
 type ProcessType byte
 
 const (
-	UNKNOWN    ProcessType = iota
-	POSTMASTER ProcessType = iota
+	UnknownProcess             ProcessType = iota
+	Postmaster                 ProcessType = iota
+	AutovacuumLauncher         ProcessType = iota
+	BackgroundWriter           ProcessType = iota
+	Checkpointer               ProcessType = iota
+	LogicalReplicationLauncher ProcessType = iota
+	Startup                    ProcessType = iota
+	StatsCollector             ProcessType = iota
+	WalReceiver                ProcessType = iota
+	WalSender                  ProcessType = iota
+	WalWriter                  ProcessType = iota
 )
 
 type Process struct {
@@ -52,8 +61,37 @@ func (process *Process) Children() (result []*Process) {
 	return result
 }
 
-func getProcessType(pid int) (result ProcessType) {
-	result = UNKNOWN
+func getProcessType(process *Process) (result ProcessType) {
+	ProcessTypeBasicIdent := map[ProcessType][]string{
+		AutovacuumLauncher: []string{"autovacuumlauncher"},
+		BackgroundWriter:   []string{"backgroundwriter", "writer"},
+		Checkpointer:       []string{"checkpointer"},
+		Startup:            []string{"startup"},
+		StatsCollector:     []string{"statscollector"},
+		WalReceiver:        []string{"walreceiver"},
+		WalSender:          []string{"walsender"},
+		WalWriter:          []string{"walwriter"},
+		LogicalReplicationLauncher: []string{"logicalreplicationlauncher",
+			"logicalreplicationworker"},
+	}
+
+	result = UnknownProcess
+
+	cmdline := process.CmdLine
+	cmdline = strings.Replace(cmdline, " ", "", -1)
+	cmdline = strings.Replace(cmdline, "postgres:", "", 1)
+	cmdline = strings.Replace(cmdline, "bgworker:", "", 1)
+
+	for ptype, items := range ProcessTypeBasicIdent {
+		for _, item := range items {
+			if strings.HasPrefix(cmdline, item) {
+				result = ptype
+				goto end
+			}
+		}
+	}
+
+end:
 	return result
 }
 
@@ -81,7 +119,7 @@ func getProcessByPid(pid int) (result *Process) {
 		Pid:       pid,
 		CmdLine:   string(cmdline),
 		ParentPid: ppid,
-		Type:      getProcessType(pid),
 	}
+	result.Type = getProcessType(result)
 	return result
 }

@@ -211,8 +211,10 @@ func (node *PostgresNode) Pid() int {
 	return pid
 }
 
-func (node *PostgresNode) GetProcess() *Process {
-	return getProcessByPid(node.Pid())
+func (node *PostgresNode) GetProcess() (result *Process) {
+	result = getProcessByPid(node.Pid())
+	result.Type = Postmaster
+	return result
 }
 
 func MakePostgresNode(name string) *PostgresNode {

@@ -1,6 +1,7 @@
 package pqt
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -8,32 +9,26 @@ func TestPsUtils(t *testing.T) {
 	node := MakePostgresNode("master")
 
 	t.Run("postmaster.pid", func(t *testing.T) {
-		if node.Pid() != 0 {
-			t.Fail()
-		}
+		assert.Equal(t, node.Pid(), 0)
 		node.Init()
 		node.Start()
-		if node.Pid() <= 0 {
-			t.Fail()
-		}
+		assert.NotEqual(t, node.Pid(), 0)
 	})
 
 	t.Run("children", func(t *testing.T) {
 		process := node.GetProcess()
-		if process.CmdLine == "" || process.Pid != node.Pid() {
-			t.Fail()
-		}
+		assert.NotEqual(t, process.CmdLine, "")
+		assert.Equal(t, process.Pid, node.Pid())
+		assert.Equal(t, process.Type, Postmaster)
+
 		children := process.Children()
-		if len(children) == 0 {
-			t.Fail()
-		}
+		assert.NotEqual(t, len(children), 0)
+
 		for _, child := range children {
-			if child.Pid == 0 || child.CmdLine == "" {
-				t.Fail()
-			}
-			if child.ParentPid != process.Pid {
-				t.Fail()
-			}
+			assert.NotEqual(t, child.Pid, 0)
+			assert.NotEqual(t, child.CmdLine, "")
+			assert.Equal(t, child.ParentPid, process.Pid)
+			assert.NotEqual(t, child.Type, UnknownProcess)
 		}
 	})
 
