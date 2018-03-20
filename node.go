@@ -27,6 +27,7 @@ var (
 	pqtLogFile       = flag.String("pqt-log", "", "Collect logs to one place")
 )
 
+// postmaster node
 type PostgresNode struct {
 	name     string
 	host     string
@@ -43,6 +44,7 @@ type PostgresNode struct {
 	defaultConnection *sql.DB
 }
 
+// Reads new lines from postgres logs.
 func tailLog(node *PostgresNode, filename string) {
 	t, err := tail.TailFile(filename, tail.Config{Follow: true})
 	if err != nil {
@@ -65,6 +67,7 @@ func tailLog(node *PostgresNode, filename string) {
 	}
 }
 
+// Creates a new connection to node.
 func (node *PostgresNode) Connect() *sql.DB {
 	conninfo := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable",
 		node.user, node.host, node.port, node.database)
@@ -76,6 +79,8 @@ func (node *PostgresNode) Connect() *sql.DB {
 	return db
 }
 
+// Execute query and fetch resulting rows from node.
+// Uses the default connection.
 func (node *PostgresNode) Fetch(sql string, params ...interface{}) *sql.Rows {
 	var err error
 
@@ -91,10 +96,14 @@ func (node *PostgresNode) Fetch(sql string, params ...interface{}) *sql.Rows {
 	return rows
 }
 
+// Executes query without returning any data.
+// Uses the default connection.
 func (node *PostgresNode) Execute(sql string, params ...interface{}) {
 	node.Fetch(sql, params...).Close()
 }
 
+// Starts a postgres node.
+// The node should be initialized.
 func (node *PostgresNode) Start(params ...string) (string, error) {
 	if node.status == STARTED {
 		return "", errors.New("node has been started already")
@@ -125,6 +134,7 @@ func (node *PostgresNode) Start(params ...string) (string, error) {
 	return res, nil
 }
 
+// Stops a postgres node.
 func (node *PostgresNode) Stop(params ...string) (string, error) {
 	if node.status != STARTED {
 		return "", errors.New("node has not been started")
@@ -146,6 +156,9 @@ func (node *PostgresNode) Stop(params ...string) (string, error) {
 	return res, nil
 }
 
+// Initializes a new postgres node.
+// Creates directories for logs and data, and writes
+// a default configuration.
 func (node *PostgresNode) Init(params ...string) (string, error) {
 	if node.status != INITIAL {
 		return "", errors.New("node has been initialized already")
@@ -194,6 +207,7 @@ port = %d
 	}
 }
 
+// Returns postmaster pid.
 func (node *PostgresNode) Pid() int {
 	if node.status != STARTED {
 		return 0
@@ -211,12 +225,14 @@ func (node *PostgresNode) Pid() int {
 	return pid
 }
 
+// Returns Process instance for postmaster.
 func (node *PostgresNode) GetProcess() (result *Process) {
 	result = getProcessByPid(node.Pid())
 	result.Type = Postmaster
 	return result
 }
 
+// Makes a new postgres node using specified name.
 func MakePostgresNode(name string) *PostgresNode {
 	if !pqtLogSetUp {
 		pqtLogSetUp = true

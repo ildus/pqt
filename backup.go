@@ -14,11 +14,13 @@ type ReplicaNode struct {
 	Master *PostgresNode
 }
 
+// Creates a replica for specified master node.
 func MakeReplicaNode(name string, master *PostgresNode) *ReplicaNode {
 	node := &ReplicaNode{*MakePostgresNode(name), master}
 	return node
 }
 
+// Write default recovery.conf.
 func (node *ReplicaNode) writeRecoveryConf() {
 	lines := `
 primary_conninfo = 'application_name=%s port=%d user=%s hostaddr=127.0.0.1'
@@ -34,6 +36,7 @@ standby_mode = on
 	}
 }
 
+// Initializes a replica: makes backup and writes recovery.conf.
 func (node *ReplicaNode) Init(params ...string) (string, error) {
 	var err error
 
@@ -53,15 +56,18 @@ func (node *ReplicaNode) Init(params ...string) (string, error) {
 		"-h", node.host,
 		"-U", node.user,
 		"-D", node.dataDirectory,
+		"-X", "fetch",
 	}
 	args = append(args, params...)
 	res := execUtility("pg_basebackup", args...)
+
 	node.initDefaultConf()
 	node.writeRecoveryConf()
 	node.status = STOPPED
 	return res, nil
 }
 
+// Waits until replica gets to current LSN on master.
 func (node *ReplicaNode) Catchup() {
 	var lsn string
 
