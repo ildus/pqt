@@ -6,9 +6,8 @@ import (
 )
 
 func TestTrace(t *testing.T) {
-	setupDebugInformation()
+	setupDebugInformation("test")
 
-	t.Run("lookup_function", func(t *testing.T) {
-		assert.NotEqual(t, getFunctionAddr("LWLockAcquire"), 0)
-	})
+	addr, _ := getFunctionAddr("some_func")
+	assert.Equal(t, addr, uint64(0x5fa))
 }
