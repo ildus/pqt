@@ -1,7 +1,7 @@
 package pqt
 
 import (
-	"github.com/stretchr/testify/assert"
+	"fmt"
 	"testing"
 )
 
@@ -12,15 +12,21 @@ func TestTrace(t *testing.T) {
 	node.Init()
 	node.Start()
 
+	catched := 0
 	process := node.GetProcess()
 	children := process.Children()
 	for _, child := range children {
 		if child.Type == AutovacuumLauncher {
 			debugger = MakeDebugger(node, child)
-			assert.NotEqual(t, debugger.ApiDebugger, nil)
-			debugger.CreateBreakpoint("LWLockAcquire", func() error {
+			debugger.CreateBreakpoint("pg_usleep", func() error {
+				catched += 1
 				return nil
 			})
 		}
 	}
+
+	node.Execute("select pg_sleep(1)")
+	node.Execute("select pg_sleep(1)")
+	fmt.Println("catched:", catched)
+	node.Stop()
 }
