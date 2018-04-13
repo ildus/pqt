@@ -17,12 +17,12 @@ import (
 
 type BreakpointCallback func() error
 
-type breakpoint struct {
+type Breakpoint struct {
 	addr        uint64
 	pcaddr      uint64
 	original    []byte
 	callback    BreakpointCallback
-	description string
+	Description string
 }
 
 type DebugInformation struct {
@@ -31,9 +31,9 @@ type DebugInformation struct {
 
 type Debugger struct {
 	Process        *Process
-	BreakpointChan chan *breakpoint
+	BreakpointChan chan *Breakpoint
 	Thread         Pthread
-	Breakpoints    map[uint64]*breakpoint
+	Breakpoints    map[uint64]*Breakpoint
 	DebugInfo      *DebugInformation
 }
 
@@ -178,9 +178,9 @@ func clearBreakpoint(pid int, breakpoint uintptr, original []byte) {
 func MakeDebugger(p *Process, path string) *Debugger {
 	debugger := &Debugger{
 		Process:        p,
-		BreakpointChan: make(chan *breakpoint, 1),
+		BreakpointChan: make(chan *Breakpoint, 1),
 		DebugInfo:      getDebugInformation(path),
-		Breakpoints:    make(map[uint64]*breakpoint),
+		Breakpoints:    make(map[uint64]*Breakpoint),
 	}
 
 	thread := makeThread(func() {
@@ -224,7 +224,7 @@ func MakeDebugger(p *Process, path string) *Debugger {
 					if !ok {
 						log.Fatal("can't find breakpoint for trap")
 					}
-					log.Printf("trap on '%s' at %x", br.description, addr)
+					log.Printf("trap on '%s' at %x", br.Description, addr)
 
 					/* remove trap instruction so it can run safely */
 					clearBreakpoint(p.Pid, uintptr(addr), br.original)
@@ -241,12 +241,20 @@ func MakeDebugger(p *Process, path string) *Debugger {
 				} else {
 					select {
 					case br := <-debugger.BreakpointChan:
-						/* we got a new breakpoint */
-						resaddr := startingPC + br.addr
-						log.Printf("putting a breakpoint on '%s' at %x",
-							br.description, resaddr)
-						br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
-						debugger.Breakpoints[resaddr] = br
+						if br.pcaddr != 0 {
+							log.Printf("remove a breakpoint on '%s' at %x",
+								br.Description, br.pcaddr)
+							clearBreakpoint(p.Pid, uintptr(br.pcaddr), br.original)
+							delete(debugger.Breakpoints, br.pcaddr)
+						} else {
+							/* we got a new breakpoint */
+							resaddr := startingPC + br.addr
+							log.Printf("putting a breakpoint on '%s' at %x",
+								br.Description, resaddr)
+							br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
+							br.pcaddr = resaddr
+							debugger.Breakpoints[resaddr] = br
+						}
 					default:
 						log.Printf("tracee has stopped with reason '%s' on %x", ws.StopSignal(),
 							curAddr)
@@ -266,17 +274,23 @@ func MakeDebugger(p *Process, path string) *Debugger {
 }
 
 func (debugger *Debugger) CreateBreakpoint(funcName string,
-	callback BreakpointCallback) {
+	callback BreakpointCallback) *Breakpoint {
 
 	addr, err := debugger.DebugInfo.LookupFunction(funcName)
 	if addr == 0 || err != nil {
 		log.Fatal("can't find function addr: ", err)
 	}
-	br := &breakpoint{
+	br := &Breakpoint{
 		addr:        addr,
 		callback:    callback,
-		description: funcName,
+		Description: funcName,
 	}
+	debugger.BreakpointChan <- br
+	syscall.Kill(debugger.Process.Pid, syscall.SIGSTOP)
+	return br
+}
+
+func (debugger *Debugger) RemoveBreakpoint(br *Breakpoint) {
 	debugger.BreakpointChan <- br
 	syscall.Kill(debugger.Process.Pid, syscall.SIGSTOP)
 }
