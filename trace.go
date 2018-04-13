@@ -7,6 +7,7 @@ import (
 	"debug/elf"
 	"fmt"
 	sys "golang.org/x/sys/unix"
+	"io"
 	"io/ioutil"
 	"log"
 	"strconv"
@@ -36,8 +37,42 @@ type Debugger struct {
 	DebugInfo      *DebugInformation
 }
 
+func (di *DebugInformation) getFirstLineAddr(cu *dwarf.Entry, addr uint64) uint64 {
+	lineReader, err := di.dwarfData.LineReader(cu)
+	if err != nil {
+		log.Fatal("can't read debug_line: ", err)
+	}
+	if lineReader == nil {
+		log.Fatal("there is no debug_line in executable")
+	}
+
+	var entry dwarf.LineEntry
+
+	next := false
+	for {
+		err := lineReader.Next(&entry)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Panic("dwarf line reading error: ", err)
+		}
+		if entry.Address == addr {
+			next = true
+			continue
+		}
+
+		if next {
+			return entry.Address
+		}
+	}
+	return 0
+}
+
 func (di *DebugInformation) LookupFunction(funcName string) (uint64, error) {
+	var cu *dwarf.Entry = nil
 	reader := di.dwarfData.Reader()
+
 	for {
 		entry, err := reader.Next()
 		if err != nil {
@@ -47,7 +82,13 @@ func (di *DebugInformation) LookupFunction(funcName string) (uint64, error) {
 			break
 		}
 
-		if entry.Tag == dwarf.TagSubprogram {
+		if entry.Tag == dwarf.TagCompileUnit {
+			cu = entry
+		} else if entry.Tag == dwarf.TagSubprogram {
+			if cu == nil {
+				log.Fatal("complilation unit not found for function")
+			}
+
 			name := entry.Val(dwarf.AttrName).(string)
 			if name != funcName {
 				continue
@@ -61,13 +102,10 @@ func (di *DebugInformation) LookupFunction(funcName string) (uint64, error) {
 			if !ok {
 				return 0, fmt.Errorf("symbol %q has non-uint64 LowPC attribute", name)
 			}
-			return addr, nil
+			return di.getFirstLineAddr(cu, addr), nil
 		}
 	}
 	return 0, fmt.Errorf("function is not found")
-}
-
-func (di *DebugInformation) GetFirstLine(addr uint64) {
 }
 
 func getDebugInformation(path string) *DebugInformation {
@@ -187,14 +225,14 @@ func MakeDebugger(p *Process, path string) *Debugger {
 						log.Fatal("can't find breakpoint for trap")
 					}
 
-					log.Printf("trap on '%s' at %x", br.description, curAddr)
+					log.Printf("trap on '%s' at %x", br.description, addr)
 					clearBreakpoint(p.Pid, uintptr(addr), br.original)
 					br.callback()
 					setPC(p.Pid, addr)
 				} else {
 					select {
 					case br := <-debugger.BreakpointChan:
-						resaddr := startingPC + br.addr + 8
+						resaddr := startingPC + br.addr
 						log.Printf("putting a breakpoint on '%s' at %x",
 							br.description, resaddr)
 						br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
@@ -221,7 +259,7 @@ func (debugger *Debugger) CreateBreakpoint(funcName string,
 	callback BreakpointCallback) {
 
 	addr, err := debugger.DebugInfo.LookupFunction(funcName)
-	if err != nil {
+	if addr == 0 || err != nil {
 		log.Fatal("can't find function addr: ", err)
 	}
 	br := &breakpoint{
