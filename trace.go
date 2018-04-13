@@ -1,3 +1,5 @@
+// +build linux
+
 package pqt
 
 import (
@@ -5,36 +7,37 @@ import (
 	"debug/elf"
 	"fmt"
 	sys "golang.org/x/sys/unix"
+	"io/ioutil"
 	"log"
+	"strconv"
+	"strings"
 	"syscall"
-)
-
-var (
-	dwarfData *dwarf.Data = nil
 )
 
 type BreakpointCallback func() error
 
 type breakpoint struct {
 	addr        uint64
+	pcaddr      uint64
 	original    []byte
 	callback    BreakpointCallback
 	description string
 }
 
+type DebugInformation struct {
+	dwarfData *dwarf.Data
+}
+
 type Debugger struct {
 	Process        *Process
 	BreakpointChan chan *breakpoint
-	Thread         Thread
+	Thread         Pthread
 	Breakpoints    map[uint64]*breakpoint
+	DebugInfo      *DebugInformation
 }
 
-func getFunctionAddr(funcName string) (uint64, error) {
-	if dwarfData == nil {
-		log.Panic("debug information should be set up")
-	}
-
-	reader := dwarfData.Reader()
+func (di *DebugInformation) LookupFunction(funcName string) (uint64, error) {
+	reader := di.dwarfData.Reader()
 	for {
 		entry, err := reader.Next()
 		if err != nil {
@@ -64,7 +67,10 @@ func getFunctionAddr(funcName string) (uint64, error) {
 	return 0, fmt.Errorf("function is not found")
 }
 
-func setupDebugInformation(path string) {
+func (di *DebugInformation) GetFirstLine(addr uint64) {
+}
+
+func getDebugInformation(path string) *DebugInformation {
 	f, err := elf.Open(path)
 	if err != nil {
 		log.Panic("can't open binary: ", err)
@@ -74,7 +80,19 @@ func setupDebugInformation(path string) {
 	if err != nil {
 		log.Panic("can't get dwarf information from binary: ", err)
 	}
-	dwarfData = data
+	di := &DebugInformation{
+		dwarfData: data,
+	}
+	return di
+}
+
+func getFirstInstructionAddress(pid int) uint64 {
+	dat, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/maps", pid))
+	res, err := strconv.ParseUint(strings.Split(string(dat), "-")[0], 16, 64)
+	if err != nil {
+		log.Println("can't parse first instruction address")
+	}
+	return res
 }
 
 func setPC(pid int, pc uint64) {
@@ -119,23 +137,23 @@ func clearBreakpoint(pid int, breakpoint uintptr, original []byte) {
 	}
 }
 
-func MakeDebugger(node *PostgresNode, p *Process) *Debugger {
-	path := getBinPath("postgres")
-	log.Printf(path)
-	if dwarfData == nil {
-		setupDebugInformation(path)
-	}
-
-	breakpointChan := make(chan *breakpoint, 1)
+func MakeDebugger(p *Process, path string) *Debugger {
 	debugger := &Debugger{
 		Process:        p,
-		BreakpointChan: breakpointChan,
+		BreakpointChan: make(chan *breakpoint, 1),
+		DebugInfo:      getDebugInformation(path),
+		Breakpoints:    make(map[uint64]*breakpoint),
 	}
 
 	thread := makeThread(func() {
 		var ws syscall.WaitStatus
 
-		err := syscall.PtraceAttach(p.Pid)
+		pgid, err := syscall.Getpgid(p.Pid)
+		if err != nil {
+			log.Fatal("can't get pgid: ", err)
+		}
+
+		err = syscall.PtraceAttach(p.Pid)
 		if err != nil {
 			log.Fatal("can't attach: ", err)
 		}
@@ -145,42 +163,55 @@ func MakeDebugger(node *PostgresNode, p *Process) *Debugger {
 		if !ws.Stopped() {
 			log.Fatal("could not attach: ", err)
 		}
-		startingPC := getPC(p.Pid)
+		startingPC := getFirstInstructionAddress(p.Pid)
 		syscall.PtraceCont(p.Pid, 0)
 
 		for {
-			var msg uint
-			_, err := syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
+			wpid, err := syscall.Wait4(-1*pgid, &ws, syscall.WALL, nil)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("wait4 error ", err)
 			}
-			msg, err = syscall.PtraceGetEventMsg(p.Pid)
-			log.Print(msg)
+			if wpid == 0 {
+				continue
+			}
 
-			if ws.StopSignal() == sys.SIGTRAP {
-				curAddr := getPC(p.Pid)
-				br, ok := debugger.Breakpoints[curAddr]
-				if ok {
-					clearBreakpoint(p.Pid, uintptr(curAddr), br.original)
-					log.Println(br)
-				}
-			} else if ws.Signaled() || ws.Exited() {
+			if ws.Signaled() || ws.Exited() {
 				log.Println("exited")
 				break
 			} else if ws.Stopped() {
-				select {
-				case br := <-breakpointChan:
-					resaddr := startingPC + br.addr
-					br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
-					debugger.Breakpoints[resaddr] = br
-				default:
-					break
+				curAddr := getPC(p.Pid)
+				if ws.StopSignal() == sys.SIGTRAP {
+					addr := curAddr - 1
+					br, ok := debugger.Breakpoints[addr]
+					if !ok {
+						log.Fatal("can't find breakpoint for trap")
+					}
+
+					log.Printf("trap on '%s' at %x", br.description, curAddr)
+					clearBreakpoint(p.Pid, uintptr(addr), br.original)
+					br.callback()
+					setPC(p.Pid, addr)
+				} else {
+					select {
+					case br := <-debugger.BreakpointChan:
+						resaddr := startingPC + br.addr + 8
+						log.Printf("putting a breakpoint on '%s' at %x",
+							br.description, resaddr)
+						br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
+						debugger.Breakpoints[resaddr] = br
+					default:
+						log.Printf("stopped with reason '%s' on %x", ws.StopSignal(),
+							curAddr)
+						goto outside
+					}
 				}
-				log.Println("stopped")
 			}
-			log.Println("continued")
 			syscall.PtraceCont(p.Pid, 0)
 		}
+
+	outside:
+		syscall.PtraceDetach(p.Pid)
+		log.Println("debugger thread has ended")
 	})
 	debugger.Thread = thread
 	return debugger
@@ -189,8 +220,7 @@ func MakeDebugger(node *PostgresNode, p *Process) *Debugger {
 func (debugger *Debugger) CreateBreakpoint(funcName string,
 	callback BreakpointCallback) {
 
-	addr, err := getFunctionAddr(funcName)
-	log.Printf("addr for %s is %d", funcName, addr)
+	addr, err := debugger.DebugInfo.LookupFunction(funcName)
 	if err != nil {
 		log.Fatal("can't find function addr: ", err)
 	}
@@ -210,10 +240,14 @@ func (debugger *Debugger) Detach() {
 	}
 }
 
-func (debugger *Debugger) Stop() error {
+func (debugger *Debugger) Stop() {
+	debugger.Thread.Kill()
+}
+
+func (debugger *Debugger) SigStop() error {
 	return sys.Kill(debugger.Process.Pid, sys.SIGSTOP)
 }
 
-func (debugger *Debugger) Continue() error {
+func (debugger *Debugger) SigContinue() error {
 	return sys.Kill(debugger.Process.Pid, sys.SIGCONT)
 }

@@ -42,6 +42,7 @@ type PostgresNode struct {
 	status        int
 
 	defaultConnection *sql.DB
+	connections       []*sql.DB
 }
 
 // Reads new lines from postgres logs.
@@ -72,6 +73,8 @@ func (node *PostgresNode) Connect() *sql.DB {
 	if err != nil {
 		log.Panic("Can't connect to database: ", err)
 	}
+
+	node.connections = append(node.connections, db)
 	return db
 }
 
@@ -143,6 +146,11 @@ func (node *PostgresNode) Stop(params ...string) (string, error) {
 		"stop",
 	}
 	args = append(args, params...)
+
+	for i := range node.connections {
+		node.connections[i].Close()
+	}
+	node.connections = nil
 
 	res := execUtility("pg_ctl", args...)
 	node.status = STOPPED

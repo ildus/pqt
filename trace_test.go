@@ -1,3 +1,5 @@
+// +build linux
+
 package pqt
 
 import (
@@ -14,19 +16,28 @@ func TestTrace(t *testing.T) {
 
 	catched := 0
 	process := node.GetProcess()
+
+	var pid int
+	rows := node.Fetch("select pg_backend_pid()")
+	for rows.Next() {
+		rows.Scan(&pid)
+		break
+	}
+	rows.Close()
+
 	children := process.Children()
 	for _, child := range children {
-		if child.Type == AutovacuumLauncher {
-			debugger = MakeDebugger(node, child)
-			debugger.CreateBreakpoint("pg_usleep", func() error {
+		if child.Pid == pid {
+			debugger = MakeDebugger(child, getBinPath("postgres"))
+			debugger.CreateBreakpoint("pg_backend_pid", func() error {
 				catched += 1
 				return nil
 			})
 		}
 	}
 
-	node.Execute("select pg_sleep(1)")
-	node.Execute("select pg_sleep(1)")
+	node.Execute("select pg_backend_pid()")
+	node.Execute("select pg_backend_pid()")
 	fmt.Println("catched:", catched)
 	node.Stop()
 }
