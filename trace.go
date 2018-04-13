@@ -214,7 +214,7 @@ func MakeDebugger(p *Process, path string) *Debugger {
 			}
 
 			if ws.Signaled() || ws.Exited() {
-				log.Println("exited")
+				log.Println("tracee process has exited")
 				break
 			} else if ws.Stopped() {
 				curAddr := getPC(p.Pid)
@@ -224,7 +224,6 @@ func MakeDebugger(p *Process, path string) *Debugger {
 					if !ok {
 						log.Fatal("can't find breakpoint for trap")
 					}
-
 					log.Printf("trap on '%s' at %x", br.description, addr)
 
 					/* remove trap instruction so it can run safely */
@@ -232,7 +231,7 @@ func MakeDebugger(p *Process, path string) *Debugger {
 					br.callback()
 					setPC(p.Pid, addr)
 
-					/* make single step and return breakpoint */
+					/* make single step and restore breakpoint */
 					syscall.PtraceSingleStep(p.Pid)
 					_, err := syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
 					if err != nil {
@@ -249,7 +248,7 @@ func MakeDebugger(p *Process, path string) *Debugger {
 						br.original = writeBreakpoint(p.Pid, uintptr(resaddr))
 						debugger.Breakpoints[resaddr] = br
 					default:
-						log.Printf("stopped with reason '%s' on %x", ws.StopSignal(),
+						log.Printf("tracee has stopped with reason '%s' on %x", ws.StopSignal(),
 							curAddr)
 						goto outside
 					}

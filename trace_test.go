@@ -3,7 +3,7 @@
 package pqt
 
 import (
-	"fmt"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -38,6 +38,6 @@ func TestTrace(t *testing.T) {
 
 	node.Execute("select pg_backend_pid()")
 	node.Execute("select pg_backend_pid()")
-	fmt.Println("catched:", catched)
+	assert.Equal(t, catched, 2)
 	node.Stop()
 }
