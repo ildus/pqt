@@ -226,12 +226,23 @@ func MakeDebugger(p *Process, path string) *Debugger {
 					}
 
 					log.Printf("trap on '%s' at %x", br.description, addr)
+
+					/* remove trap instruction so it can run safely */
 					clearBreakpoint(p.Pid, uintptr(addr), br.original)
 					br.callback()
 					setPC(p.Pid, addr)
+
+					/* make single step and return breakpoint */
+					syscall.PtraceSingleStep(p.Pid)
+					_, err := syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
+					if err != nil {
+						log.Fatal("single step wait4 error ", err)
+					}
+					writeBreakpoint(p.Pid, uintptr(addr))
 				} else {
 					select {
 					case br := <-debugger.BreakpointChan:
+						/* we got a new breakpoint */
 						resaddr := startingPC + br.addr
 						log.Printf("putting a breakpoint on '%s' at %x",
 							br.description, resaddr)
