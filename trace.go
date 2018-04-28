@@ -175,11 +175,11 @@ func clearBreakpoint(pid int, breakpoint uintptr, original []byte) {
 	}
 }
 
-func MakeDebugger(p *Process, path string) *Debugger {
+func MakeDebugger(p *Process) *Debugger {
 	debugger := &Debugger{
 		Process:        p,
 		BreakpointChan: make(chan *Breakpoint, 1),
-		DebugInfo:      getDebugInformation(path),
+		DebugInfo:      getDebugInformation(getBinPath("postgres")),
 		Breakpoints:    make(map[uint64]*Breakpoint),
 	}
 
@@ -195,7 +195,6 @@ func MakeDebugger(p *Process, path string) *Debugger {
 		if err != nil {
 			log.Fatal("can't attach: ", err)
 		}
-
 		// should stop after attach
 		_, err = syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
 		if !ws.Stopped() {
@@ -222,22 +221,23 @@ func MakeDebugger(p *Process, path string) *Debugger {
 					addr := curAddr - 1
 					br, ok := debugger.Breakpoints[addr]
 					if !ok {
-						log.Fatal("can't find breakpoint for trap")
-					}
-					log.Printf("trap on '%s' at %x", br.Description, addr)
+						log.Printf("trap on at %x, no breakpoint", addr)
+					} else {
+						log.Printf("trap on '%s' at %x", br.Description, addr)
 
-					/* remove trap instruction so it can run safely */
-					clearBreakpoint(p.Pid, uintptr(addr), br.original)
-					br.callback()
-					setPC(p.Pid, addr)
+						/* remove trap instruction so it can run safely */
+						clearBreakpoint(p.Pid, uintptr(addr), br.original)
+						br.callback()
+						setPC(p.Pid, addr)
 
-					/* make single step and restore breakpoint */
-					syscall.PtraceSingleStep(p.Pid)
-					_, err := syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
-					if err != nil {
-						log.Fatal("single step wait4 error ", err)
+						/* make single step and restore breakpoint */
+						syscall.PtraceSingleStep(p.Pid)
+						_, err := syscall.Wait4(p.Pid, &ws, syscall.WALL, nil)
+						if err != nil {
+							log.Fatal("single step wait4 error ", err)
+						}
+						writeBreakpoint(p.Pid, uintptr(addr))
 					}
-					writeBreakpoint(p.Pid, uintptr(addr))
 				} else {
 					select {
 					case br := <-debugger.BreakpointChan:

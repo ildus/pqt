@@ -30,18 +30,17 @@ var (
 
 // postmaster node
 type PostgresNode struct {
-	name     string
-	host     string
-	port     int
-	user     string
-	database string
+	name string
+	host string
+	port int
+	user string
 
 	baseDirectory string
 	dataDirectory string
 	pgLogFile     string
 	status        int
 
-	defaultConnection *sql.DB
+	defaultConnection *PostgresConn
 	connections       []*sql.DB
 }
 
@@ -65,9 +64,9 @@ func tailLog(node *PostgresNode, filename string) {
 }
 
 // Creates a new connection to node.
-func (node *PostgresNode) Connect() *sql.DB {
+func (node *PostgresNode) Connect(dbname string) *sql.DB {
 	conninfo := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable",
-		node.user, node.host, node.port, node.database)
+		node.user, node.host, node.port, dbname)
 
 	db, err := sql.Open("postgres", conninfo)
 	if err != nil {
@@ -79,20 +78,13 @@ func (node *PostgresNode) Connect() *sql.DB {
 }
 
 // Execute query and fetch resulting rows from node.
-// Uses the default connection.
+// Uses the default connection to postgres database.
 func (node *PostgresNode) Fetch(sql string, params ...interface{}) *sql.Rows {
-	var err error
-
 	if node.defaultConnection == nil {
-		node.defaultConnection = node.Connect()
+		node.defaultConnection = MakePostgresConn(node, "postgres")
 	}
 
-	rows, err := node.defaultConnection.Query(sql, params...)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	return rows
+	return node.defaultConnection.Fetch(sql, params...)
 }
 
 // Executes query without returning any data.
@@ -209,6 +201,24 @@ port = %d
 	}
 }
 
+// Append new lines to specified configuration.
+func (node *PostgresNode) AppendConf(file string, lines string) {
+	if node.status == INITIAL {
+		log.Panic("node has not been initialized")
+	}
+
+	confFile := filepath.Join(node.dataDirectory, file)
+	f, err := os.OpenFile(confFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Panic("can't append new configuration: ", err)
+	}
+	_, err = f.WriteString(lines)
+	if err != nil {
+		log.Panic("can't append new configuration: ", err)
+	}
+	f.Close()
+}
+
 // Returns postmaster pid.
 func (node *PostgresNode) Pid() int {
 	if node.status != STARTED {
@@ -263,6 +273,5 @@ func MakePostgresNode(name string) *PostgresNode {
 		defaultConnection: nil,
 		status:            INITIAL,
 		user:              curUser.Username,
-		database:          "postgres",
 	}
 }

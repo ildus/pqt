@@ -16,6 +16,7 @@ const (
 	UnknownProcess             ProcessType = iota
 	Postmaster                 ProcessType = iota
 	AutovacuumLauncher         ProcessType = iota
+	AutovacuumWorker           ProcessType = iota
 	BackgroundWriter           ProcessType = iota
 	Checkpointer               ProcessType = iota
 	LogicalReplicationLauncher ProcessType = iota
@@ -24,6 +25,7 @@ const (
 	WalReceiver                ProcessType = iota
 	WalSender                  ProcessType = iota
 	WalWriter                  ProcessType = iota
+	OtherBgWorker              ProcessType = iota
 )
 
 type Process struct {
@@ -64,6 +66,7 @@ func (process *Process) Children() (result []*Process) {
 func getProcessType(process *Process) (result ProcessType) {
 	ProcessTypeBasicIdent := map[ProcessType][]string{
 		AutovacuumLauncher: []string{"autovacuumlauncher"},
+		AutovacuumWorker:   []string{"autovacuumworker"},
 		BackgroundWriter:   []string{"backgroundwriter", "writer"},
 		Checkpointer:       []string{"checkpointer"},
 		Startup:            []string{"startup"},
@@ -80,7 +83,10 @@ func getProcessType(process *Process) (result ProcessType) {
 	cmdline := process.CmdLine
 	cmdline = strings.Replace(cmdline, " ", "", -1)
 	cmdline = strings.Replace(cmdline, "postgres:", "", 1)
+
+	tmp := cmdline
 	cmdline = strings.Replace(cmdline, "bgworker:", "", 1)
+	is_bgworker := tmp != cmdline
 
 	for ptype, items := range ProcessTypeBasicIdent {
 		for _, item := range items {
@@ -89,6 +95,10 @@ func getProcessType(process *Process) (result ProcessType) {
 				goto end
 			}
 		}
+	}
+
+	if result == UnknownProcess && is_bgworker {
+		result = OtherBgWorker
 	}
 
 end:

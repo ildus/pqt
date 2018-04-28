@@ -29,7 +29,7 @@ func TestTrace(t *testing.T) {
 	children := process.Children()
 	for _, child := range children {
 		if child.Pid == pid {
-			debugger = MakeDebugger(child, getBinPath("postgres"))
+			debugger = MakeDebugger(child)
 			breakpoint = debugger.CreateBreakpoint("pg_backend_pid", func() error {
 				catched += 1
 				return nil
