@@ -8,7 +8,8 @@ Now it can:
 * Create, initialize a database, start, stop, restart nodes with
 default or custom configuration.
 * Trace the nodes (with debug breakpoints).
-* Easy 
+* Make queries to the nodes.
+* Get list of started processes.
 
 Installation
 -------------
