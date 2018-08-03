@@ -40,8 +40,8 @@ type PostgresNode struct {
 	pgLogFile     string
 	status        int
 
-	defaultConnection *PostgresConn
-	connections       []*sql.DB
+	connections    []*sql.DB
+	lastConnection *PostgresConn
 }
 
 // Reads new lines from postgres logs.
@@ -79,18 +79,29 @@ func (node *PostgresNode) Connect(dbname string) *sql.DB {
 
 // Execute query and fetch resulting rows from node.
 // Uses the default connection to postgres database.
-func (node *PostgresNode) Fetch(sql string, params ...interface{}) *sql.Rows {
-	if node.defaultConnection == nil {
-		node.defaultConnection = MakePostgresConn(node, "postgres")
+func (node *PostgresNode) Fetch(dbname string, sql string,
+	params ...interface{}) *sql.Rows {
+
+	if node.lastConnection != nil &&
+		node.lastConnection.dbname != dbname {
+
+		node.lastConnection.Close()
+		node.lastConnection = nil
 	}
 
-	return node.defaultConnection.Fetch(sql, params...)
+	if node.lastConnection == nil {
+		node.lastConnection = MakePostgresConn(node, dbname)
+	}
+
+	return node.lastConnection.Fetch(sql, params...)
 }
 
 // Executes query without returning any data.
 // Uses the default connection.
-func (node *PostgresNode) Execute(sql string, params ...interface{}) {
-	node.Fetch(sql, params...).Close()
+func (node *PostgresNode) Execute(dbname string, sql string,
+	params ...interface{}) {
+
+	node.Fetch(dbname, sql, params...).Close()
 }
 
 // Starts a postgres node.
@@ -267,11 +278,11 @@ func MakePostgresNode(name string) *PostgresNode {
 	}
 
 	return &PostgresNode{
-		name:              name,
-		host:              "127.0.0.1",
-		port:              getAvailablePort(),
-		defaultConnection: nil,
-		status:            INITIAL,
-		user:              curUser.Username,
+		name:           name,
+		host:           "127.0.0.1",
+		port:           getAvailablePort(),
+		lastConnection: nil,
+		status:         INITIAL,
+		user:           curUser.Username,
 	}
 }

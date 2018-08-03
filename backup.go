@@ -74,7 +74,7 @@ func (node *ReplicaNode) Catchup() {
 	poll_lsn := "select pg_current_wal_lsn()::text"
 	wait_lsn := "select pg_last_wal_replay_lsn() >= '%s'::pg_lsn"
 
-	rows := node.Master.Fetch(poll_lsn)
+	rows := node.Master.Fetch("postgres", poll_lsn)
 	rows.Next()
 
 	err := rows.Scan(&lsn)
@@ -87,7 +87,7 @@ func (node *ReplicaNode) Catchup() {
 	for {
 		var reached bool
 
-		rows = node.Fetch(wait_query)
+		rows = node.Fetch("postgres", wait_query)
 		rows.Next()
 		err = rows.Scan(&reached)
 		rows.Close()

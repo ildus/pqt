@@ -49,3 +49,8 @@ func (conn *PostgresConn) Process() *Process {
 
 	return conn.process
 }
+
+// Close the connection
+func (conn *PostgresConn) Close() {
+	conn.conn.Close()
+}

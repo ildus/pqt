@@ -19,7 +19,7 @@ func TestTrace(t *testing.T) {
 	process := node.GetProcess()
 
 	var pid int
-	rows := node.Fetch("select pg_backend_pid()")
+	rows := node.Fetch("postgres", "select pg_backend_pid()")
 	for rows.Next() {
 		rows.Scan(&pid)
 		break
@@ -37,11 +37,11 @@ func TestTrace(t *testing.T) {
 		}
 	}
 
-	node.Execute("select pg_backend_pid()")
-	node.Execute("select pg_backend_pid()")
+	node.Execute("postgres", "select pg_backend_pid()")
+	node.Execute("postgres", "select pg_backend_pid()")
 	assert.Equal(t, catched, 2)
 	debugger.RemoveBreakpoint(breakpoint)
-	node.Execute("select pg_backend_pid()")
+	node.Execute("postgres", "select pg_backend_pid()")
 	assert.Equal(t, catched, 2)
 	node.Stop()
 }

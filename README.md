@@ -43,7 +43,7 @@ Get some data from the node.
 
 ```
 var pid int
-rows := node.Fetch("select pg_backend_pid()")
+rows := node.Fetch("postgres", "select pg_backend_pid()")
 for rows.Next() {
 	rows.Scan(&pid)
 	break
@@ -54,7 +54,7 @@ rows.Close()
 Or make a query without returned data.
 
 ```
-node.Execute("create table one(a text)")
+node.Execute("postgres", "create table one(a text)")
 ```
 
 Or make a connection and reuse it for queries.
