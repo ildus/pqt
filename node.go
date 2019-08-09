@@ -32,7 +32,7 @@ var (
 type PostgresNode struct {
 	name string
 	host string
-	port int
+	Port int
 	user string
 
 	baseDirectory string
@@ -66,7 +66,7 @@ func tailLog(node *PostgresNode, filename string) {
 // Creates a new connection to node.
 func (node *PostgresNode) Connect(dbname string) *sql.DB {
 	conninfo := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable",
-		node.user, node.host, node.port, dbname)
+		node.user, node.host, node.Port, dbname)
 
 	db, err := sql.Open("postgres", conninfo)
 	if err != nil {
@@ -203,7 +203,7 @@ listen_addresses = '%s'
 port = %d
 `
 
-	lines = fmt.Sprintf(lines, node.host, node.port)
+	lines = fmt.Sprintf(lines, node.host, node.Port)
 	confFile := filepath.Join(node.dataDirectory, "postgresql.conf")
 	err := ioutil.WriteFile(confFile, []byte(lines), os.ModePerm)
 
@@ -280,7 +280,7 @@ func MakePostgresNode(name string) *PostgresNode {
 	return &PostgresNode{
 		name:           name,
 		host:           "127.0.0.1",
-		port:           getAvailablePort(),
+		Port:           getAvailablePort(),
 		lastConnection: nil,
 		status:         INITIAL,
 		user:           curUser.Username,

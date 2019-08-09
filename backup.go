@@ -27,7 +27,7 @@ primary_conninfo = 'application_name=%s port=%d user=%s hostaddr=127.0.0.1'
 standby_mode = on
 `
 
-	lines = fmt.Sprintf(lines, node.name, node.port, node.user)
+	lines = fmt.Sprintf(lines, node.name, node.Port, node.user)
 	confFile := filepath.Join(node.dataDirectory, "recovery.conf")
 	err := ioutil.WriteFile(confFile, []byte(lines), os.ModePerm)
 
@@ -52,7 +52,7 @@ func (node *ReplicaNode) Init(params ...string) (string, error) {
 	os.Mkdir(node.dataDirectory, 0700)
 
 	args := []string{
-		"-p", strconv.Itoa(node.Master.port),
+		"-p", strconv.Itoa(node.Master.Port),
 		"-h", node.host,
 		"-U", node.user,
 		"-D", node.dataDirectory,
